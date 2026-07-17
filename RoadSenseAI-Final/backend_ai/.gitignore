@@ -1,0 +1,8 @@
+venv/
+env/
+.env
+*.pt
+*.onnx
+*.engine
+runs/
+_pycache_/
