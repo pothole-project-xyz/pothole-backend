@@ -9,7 +9,11 @@ const server = http.createServer();
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: [
+  process.env.CLIENT_URL, 
+  'http://localhost:3000', 
+  'https://pothole-frontend-97c9-psi.vercel.app'
+].filter(Boolean),
     credentials: true,
   },
   transports: ['websocket'],
