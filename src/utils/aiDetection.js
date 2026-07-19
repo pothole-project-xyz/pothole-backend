@@ -26,7 +26,7 @@ async function analyzeImage(filePath) {
 
     const { data } = await axios.post(process.env.AI_DETECTION_URL, form, {
       headers: form.getHeaders(),
-      timeout: 8000,
+      timeout: 60000,
     });
 
     return {
