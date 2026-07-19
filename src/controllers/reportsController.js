@@ -1,6 +1,4 @@
-const sharp = require('sharp');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
 const { query } = require('../config/db');
 const { analyzeImage } = require('../utils/aiDetection');
 
@@ -16,6 +14,13 @@ function distanceMeters(lat1, lon1, lat2, lon2) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Cloudinary auto-generates a thumbnail URL by inserting a transformation
+// segment into the secure_url — no local file processing (sharp) needed.
+function buildThumbnailUrl(secureUrl) {
+  if (!secureUrl) return null;
+  return secureUrl.replace('/upload/', '/upload/w_320,h_240,c_fill/');
 }
 
 // POST /api/reports
@@ -46,6 +51,9 @@ async function createReport(req, res, next) {
       }
     }
 
+    // With multer-storage-cloudinary, each file is already uploaded to
+    // Cloudinary by the time we get here. file.path = secure_url,
+    // file.filename = the Cloudinary public_id (needed to delete if rejected).
     let aiResult = { isPothole: true, confidence: null, severity: severity || 'medium' };
     const files = req.files || [];
 
@@ -53,14 +61,21 @@ async function createReport(req, res, next) {
       aiResult = await analyzeImage(files[0].path);
       if (aiResult.isPothole === false) {
         // Reject invalid images (AI thinks this isn't a pothole).
-        files.forEach((f) => fs.unlink(f.path, () => {}));
+        // Delete the already-uploaded Cloudinary images instead of fs.unlink.
+        await Promise.all(
+          files.map((f) =>
+            cloudinary.uploader.destroy(f.filename).catch((e) =>
+              console.warn('Cloudinary cleanup failed:', e.message)
+            )
+          )
+        );
         return res.status(422).json({
           success: false,
           message: 'The uploaded image does not appear to show a pothole or road damage. Please try a clearer photo.',
         });
       }
     }
-  
+
     if (duplicateId) {
       // Increment report count on the existing report instead of creating a new row.
       const { rows } = await query(
@@ -94,18 +109,14 @@ async function createReport(req, res, next) {
 
     const report = rows[0];
 
-    // Process and store images (resize + thumbnail) using sharp.
+    // Store Cloudinary URLs directly — no local resize/thumbnail step needed,
+    // Cloudinary generates the thumbnail on the fly via URL transformation.
     for (const file of files) {
-      const thumbName = `thumb-${path.basename(file.filename)}`;
-      const thumbPath = path.join(process.env.UPLOAD_DIR || 'uploads', thumbName);
-      try {
-        await sharp(file.path).resize(320, 240, { fit: 'cover' }).toFile(thumbPath);
-      } catch (e) {
-        console.warn('Thumbnail generation failed:', e.message);
-      }
+      const url = file.path; // secure_url from Cloudinary
+      const thumbnailUrl = buildThumbnailUrl(url);
       await query(
         `INSERT INTO report_images (report_id, url, thumbnail_url) VALUES ($1, $2, $3)`,
-        [report.id, `/uploads/${file.filename}`, `/uploads/${thumbName}`]
+        [report.id, url, thumbnailUrl]
       );
     }
 
