@@ -1,28 +1,22 @@
 const axios_url = process.env.AI_DETECTION_URL;
 
-/**
- * Calls an external AI detection microservice (e.g. a Python FastAPI service
- * running a YOLO/TensorFlow pothole-detection model) if AI_DETECTION_ENABLED
- * is true. The microservice is expected to accept a multipart image and
- * return { isPothole, confidence, severity }.
- *
- * If the service is disabled or unreachable, a safe fallback result is
- * returned so report submission is never blocked by AI downtime.
- */
-async function analyzeImage(filePath) {
-    console.log("AI DETECTION CALLED");
-    console.log(process.env.AI_DETECTION_URL);
+async function analyzeImage(fileUrl) {
+  console.log("AI DETECTION CALLED");
+  console.log(process.env.AI_DETECTION_URL);
   if (process.env.AI_DETECTION_ENABLED !== 'true' || !process.env.AI_DETECTION_URL) {
     return { isPothole: true, confidence: null, severity: 'medium', source: 'fallback' };
   }
 
   try {
-    const fs = require('fs');
     const FormData = require('form-data');
     const axios = require('axios');
 
+    // fileUrl is now a Cloudinary URL, not a local path — fetch it as a buffer.
+    const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+    const imageBuffer = Buffer.from(imageResponse.data);
+
     const form = new FormData();
-    form.append('image', fs.createReadStream(filePath));
+    form.append('image', imageBuffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
 
     const { data } = await axios.post(process.env.AI_DETECTION_URL, form, {
       headers: form.getHeaders(),
