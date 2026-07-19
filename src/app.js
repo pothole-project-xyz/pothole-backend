@@ -38,7 +38,11 @@ function createApp(io) {
   // CORS — pure frontend ko access allow kiya
   app.use(
     cors({
-      origin: process.env.CLIENT_URL || 'http://localhost:3000',
+      origin: [
+  process.env.CLIENT_URL,
+  'http://localhost:3000',
+  'https://pothole-frontend-97c9-psi.vercel.app'
+].filter(Boolean),
       credentials: true,
     })
   );
